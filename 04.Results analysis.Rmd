@@ -1,0 +1,655 @@
+---
+title: "Results Analysis Paper 2"
+author: "Montserrat Valdivia"
+date: 'March 2023'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list=ls())
+#load libraries
+library("tidyverse")
+library(dplyr)
+library(purrr)
+library("R.utils")
+library(jtools)
+library(extrafont)
+library(gridExtra)
+
+```
+
+
+# 1. Proficiency parameter recovery 
+
+
+```{r}
+# Read in data 
+# path = "C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Results/"
+# 
+# setwd(paste0(path, "Data/"))
+# 
+# files = dir(pattern = ".Rbin*")
+# 
+# all_results <- files %>%
+#    map(loadObject) %>%
+#    reduce(bind_rows)
+# 
+# all_results = all_results %>%
+#   mutate(cntry = case_when(country %in% c(1:3) ~ "Low",
+#                            country %in% c(4:6) ~ "Medium",
+#                            country %in% c(7:9) ~ "High"),
+#          condition = case_when(cond == 1 ~ "OG",
+#                                cond == 2 ~ "+2E",
+#                                cond == 3 ~ "+2H",
+#                                cond == 4 ~ "+2E&H",
+#                                cond == 5 ~ "+4E",
+#                                cond == 6 ~ "+4H",
+#                                cond == 7 ~ "+4E&H",
+#                                cond == 8 ~ "+6E",
+#                                cond == 9 ~ "+6H",
+#                                cond == 10 ~ "+6E&H")) %>%
+#   mutate(cntry = factor(cntry, levels = c( "High","Medium","Low" )),
+#          condition = factor(condition, levels = c("OG","+2E","+4E","+6E","+2H","+4H","+6H","+2E&H","+4E&H","+6E&H"))) %>%
+#   
+#   
+# 
+# 
+# saveObject(all_results, file = "C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Results/Results PV.RData")
+
+#a = loadObject(paste0(path, "Data/data_GAT_cond1_r1.Rbin"))
+```
+
+```{r}
+all_results = loadObject("C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Results/Results PV.RData")
+
+```
+
+
+
+```{r}
+all_results_v2 = all_results %>%
+  select(rep, design, country, cntry, condition, 
+         TH0, PV, se.Dim1) %>%
+  mutate(bias = PV - TH0, 
+         bias_sq = bias^2)
+
+res = all_results_v2 %>%
+  group_by(design, condition, cntry) %>%
+  summarise(TH0 = mean(TH0),
+            bias = mean(bias),
+            rmse = sqrt(mean(bias_sq)),
+            se = mean(se.Dim1),
+            abias = abs(bias) )
+correlation = all_results %>%
+  group_by(design, condition, cntry) %>%
+  summarize(cor = cor(TH0, PV))
+
+
+res1 = res %>%
+  filter(condition == "OG" & design == "Random")%>%
+  select(design, condition, cntry, se)
+  
+res2 = res %>%
+  filter(condition != "OG")%>%
+  select(design, condition, cntry, se)
+
+res3 = left_join(res2, res1, by = c( "cntry"))
+res31 = res3 %>%
+  mutate(ef_gain = (se.x - se.y)/se.y)
+
+```
+
+## 1.1. Bias
+
+Primary observations:
+positive bias = overestimation of proficiency 
+- High performing countries have negative bias
+- when easier booklets are introduced that is the closest to zero bias (positive bias) for high performing countries
+- positive bias when easier booklets are introduced for medium countries
+- positive bias when easier items are introduced
+- negative bias when harder booklets are introduced 
+- random assignment has lesser bias than GAT in general *  is this design really adaptive ?
+
+```{r}
+ggplot(data = res, 
+       mapping=aes(x=condition, y=bias, shape = design, 
+                  # shape = `Country`
+                  ))+
+ # geom_boxplot()+
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color ="grey" )+ 
+  stat_summary(fun.y=mean,   size=.5, position = position_dodge(0.75)) +
+  facet_grid(  cntry ~ .)+
+  labs( x = "Additional Booklets Difficulty" , y= "Proficiency Bias", shape = "Test Design")+
+  #ylim(-.5, .5)+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 16, family = "Times New Roman"))
+  ggsave(filename = paste0("W:/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Graphs/",
+                      "Proficiency Bias.tiff"), device = "tiff",
+   width = 35, height = 20, units = "cm", dpi = 600, compression = "lzw+p")
+```
+
+## 1.2. RMSE
+
+```{r}
+ggplot(data = res, 
+       mapping=aes(x=condition, y=rmse, shape = design
+                  ))+
+  #geom_point()+
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color ="grey" )+ 
+  stat_summary(fun.y=mean,   size=.5, position = position_dodge(0.75)) +
+  facet_grid(  cntry ~ .)+
+  labs( x = "Additional Booklets Difficulty" , y= "Proficiency RMSE", shape = "Test Design")+
+  ylim(0, .5)+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 16, family = "Times New Roman"))
+  ggsave(filename = paste0("W:/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Graphs/",
+                      "Proficiency RMSE.tiff"), device = "tiff",
+   width = 35, height = 20, units = "cm", dpi = 600, compression = "lzw+p")
+```
+
+## 1.3. Correlation 
+
+```{r}
+ggplot(data = correlation, 
+       mapping=aes(x=condition, y=cor, shape = design
+                  ))+
+  #geom_point()+
+ # geom_hline(aes(yintercept = 0), linetype = "dashed", color ="grey" )+ 
+  stat_summary(fun.y=mean,   size=.5, position = position_dodge(0.75)) +
+  facet_grid(  cntry ~ .)+
+  labs( x = "Additional Booklets Difficulty" , y= "Generated and Estimated Proficiency Correlation", shape = "Test Design")+
+  ylim(0.9, 1)+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 16, family = "Times New Roman"))
+  ggsave(filename = paste0("W:/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Graphs/",
+                      "Proficiency Correlation.tiff"), device = "tiff",
+   width = 35, height = 20, units = "cm", dpi = 600, compression = "lzw+p")
+```
+
+# 4. Standard Error Proficiency
+
+```{r}
+ggplot(data = all_results, 
+       mapping=aes(x=condition, y=se.Dim1, shape = design
+                  ))+
+  geom_boxplot()+
+ # geom_hline(aes(yintercept = 0), linetype = "dashed", color ="grey" )+ 
+  stat_summary(fun.y=mean,   size=.5, position = position_dodge(0.75)) +
+  facet_grid(  cntry ~ .)+
+  labs( x = "Additional Booklets Difficulty" , y= "Proficiency Standard Error", shape = "Test Design")+
+ # ylim(0.9, 1)+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 16, family = "Times New Roman"))
+  ggsave(filename = paste0("W:/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Graphs/",
+                      "Proficiency SE.tiff"), device = "tiff",
+   width = 35, height = 20, units = "cm", dpi = 600, compression = "lzw+p")
+```
+
+# 2. Item Parameter 
+
+```{r}
+
+# Read in data 
+path = "C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Results/"
+
+#a = loadObject(paste0(path, "Items/items_GAT_cond1_r1.Rbin"))
+
+setwd(paste0(path, "Items/"))
+
+files = dir(pattern = ".Rbin*")
+
+items_results <- files %>%
+   map(loadObject) %>%
+   reduce(bind_rows)
+
+item_results = items_results %>%
+  mutate( condition = case_when(condition == 1 ~ "OG",
+                               condition == 2 ~ "+2E",
+                               condition == 3 ~ "+2H",
+                               condition == 4 ~ "+2E&H",
+                               condition == 5 ~ "+4E",
+                               condition == 6 ~ "+4H",
+                               condition == 7 ~ "+4E&H",
+                               condition == 8 ~ "+6E",
+                               condition == 9 ~ "+6H",
+                               condition == 10 ~ "+6E&H")) %>%
+  mutate(condition = factor(condition, levels = c("OG","+2E","+4E","+6E","+2H","+4H","+6H","+2E&H","+4E&H","+6E&H")),
+         Passage.Name = factor(Passage.Name, levels = c("How Did We Learn to Fly?", "Hungry Plant", "Icelandic Horses",
+                                                        "Library Mouse", "Oliver and The Griffin", "Pemba Sherpa", 
+                                                        "Sharks", "Shiny Straw", "The Empty Pot", "The Summer My Father Was 10", 
+                                                        "Training A Deaf Polar Bear", "Where's the Honey?",
+                                                        "New Passage Inf D3","New Passage Inf D4","New Passage Inf D5",
+                                                        "New Passage Lit D3","New Passage Lit D4","New Passage Lit D5",
+                                                        "New Passage Inf E4","New Passage Inf E5","New Passage Inf E6",
+                                                        "New Passage Lit E4","New Passage Lit E5","New Passage Lit E6" )))
+  
+
+
+saveObject(item_results, file = "C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Results/Results Items.RData")
+
+
+item_results1 = item_results %>%
+  mutate(bias2_a = bias_a^2,
+         bias2_b = bias_b^2,
+         cor_a = cor(Slope..aj., rs_est_a),
+         cor_b = cor(Location..bj., rs_est_b))
+
+
+item_results_it = item_results1 %>%
+  group_by(ItemID_og, Passage.Name, design, condition) %>%
+  summarise(bias_a = round(mean(bias_a),3),
+            bias_b = round(mean(bias_b),3),
+            rmse_a = round(sqrt(mean(bias2_a)),3),
+            rmse_b = round(sqrt(mean(bias2_b)),3),
+            cor_a  = round(mean(cor_a),3),
+            cor_b  = round(mean(cor_b),3))
+
+item_results_ps = item_results1 %>%
+  group_by(Passage.Name, design) %>%
+  summarise(a = mean(rs_est_a),
+            bias_a = round(mean(bias_a),3),
+            rmse_a = round(sqrt(mean(bias2_a)),3),
+            cor_a  = round(mean(cor_a),3),
+            b = mean(rs_est_b),
+            bias_b = round(mean(bias_b),3),
+            rmse_b = round(sqrt(mean(bias2_b)),3),
+            cor_b  = round(mean(cor_b),3))
+
+item_results_psO = item_results1 %>%
+  group_by(Passage.Name) %>%
+  summarise(a = mean(alpha),
+            b = mean(beta),
+            bias_a = round(mean(bias_a),3),
+            bias_b = round(mean(bias_b),3),
+            rmse_a = round(sqrt(mean(bias2_a)),3),
+            rmse_b = round(sqrt(mean(bias2_b)),3),
+            cor_a  = round(mean(cor_a),3),
+            cor_b  = round(mean(cor_b),3))
+
+item_results_new = item_results[grepl("New", item_results$Passage.Name),]
+
+library(writexl)
+write_xlsx(item_results_ps,paste0(path, "Item parameter table.xlsx"))
+
+
+```
+
+I think a table will be more productive here. 
+
+## 2.1. IP Bias
+
+```{r}
+ggplot(data = item_results_ps, 
+       mapping=aes(x=Passage.Name , y=bias_b, shape = condition
+                  ))+
+ # geom_boxplot()+
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color ="grey" )+ 
+  stat_summary(fun.y=mean,   size=.5, position = position_dodge(0.75)) +
+  scale_shape_manual(values = c(0,1,2,3,4,5,6,7,8,9,10))+
+  facet_grid( design ~ .)+
+  labs( x = "Additional Booklets Difficulty" , y= "Passage - Difficulty Parameter Bias", shape = "Test Design")+
+  ylim(-.05, .05)+
+  theme_apa(legend.use.title = TRUE)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust=1))+
+  theme(text = element_text(size = 12, family = "Times New Roman"))
+  ggsave(filename = paste0("C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Graphs/",
+                      "Difficulty bias.tiff"), device = "tiff",
+   width = 35, height = 20, units = "cm", dpi = 600, compression = "lzw+p")
+```
+
+
+## 2.2. IP RMSE
+```{r}
+
+```
+
+## 2.3. IP Cor
+```{r}
+
+```
+
+
+# 3. Test Information
+
+```{r}
+
+# Read in data 
+path = "C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Results/"
+
+
+```
+
+
+```{r}
+
+des = rep(c("GAT", "Random"), each = 10)
+
+data_results = data.frame(design = des,
+                          cond = rep(seq(1,10), each = des))
+
+test_information_mean = function(cc, design){
+  
+  setwd(paste0(path, "Item Info/"))
+  files = dir(pattern = paste0("testInfo_", design, "_cond", cc, "_"))
+  test_info <- files %>%
+   map(loadObject) %>%
+   reduce(rbind)
+
+  TImean = colMeans(test_info)
+
+  
+  plot(TImean)
+  return(TImean)
+}  
+  
+td = c("GAT", "Random")
+
+for (cc in 1:10){
+  for (tt in 1:2) {
+    
+    design = td[tt]
+    TImean = test_information_mean(cc, design)
+    data_results[data_results$cond == cc & data_results$design == design, 3:(2+length(TImean))] <- TImean
+  }
+}
+
+theta = seq(-6,6, by = .1)
+length(theta)
+
+names(data_results)[3:121] <- theta
+
+melt_results = reshape2::melt(data_results, id = c("design", "cond"))
+names(melt_results)[3] <- "Theta"
+names(melt_results)[4] <- "Test_Info"
+
+
+
+
+melt_results = melt_results %>%
+  mutate( cond = case_when(cond == 1 ~ "OG",
+                               cond == 2 ~ "+2E",
+                               cond == 3 ~ "+2H",
+                               cond == 4 ~ "+2E&H",
+                               cond == 5 ~ "+4E",
+                               cond == 6 ~ "+4H",
+                               cond == 7 ~ "+4E&H",
+                               cond == 8 ~ "+6E",
+                               cond == 9 ~ "+6H",
+                               cond == 10 ~ "+6E&H")) %>%
+  mutate(cond = factor(cond, levels = c("OG","+2E","+4E","+6E","+2H","+4H","+6H","+2E&H","+4E&H","+6E&H")))
+
+a
+```
+
+
+
+
+
+```{r}
+
+
+a = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+2E")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+b = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+4E")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+c = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+6E")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+  
+d = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+2H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+e = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+4H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+f = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+6H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+g = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+2E&H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+
+h = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+4E&H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+i = melt_results %>%
+  filter(design == "GAT" & cond %in% c("OG", "+6E&H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+figure = ggarrange(a,b,c,d,e,f,g,h,i,
+                   ncol = 3, nrow = 3)
+
+annotate_figure(figure, 
+                bottom = text_grob("Proficiency Continuum", family = "Times New Roman", size = 14),
+                left = text_grob("Test Information", rot = 90, family = "Times New Roman", size = 14))
+
+ggsave(filename = paste0("C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Graphs/",
+                      "Test Information GAT.tiff"), device = "tiff",
+   width = 35, height = 20, units = "cm", dpi = 600, compression = "lzw+p")
+
+
+```
+
+```{r}
+a = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+2E")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+b = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+4E")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+c = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+6E")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+d = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+2H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+e = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+4H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+f = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+6H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+g = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+2E&H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+
+h = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+4E&H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+i = melt_results %>%
+  filter(design == "Random" & cond %in% c("OG", "+6E&H")) %>%
+  ggplot( aes(x = Theta, y = Test_Info, shape = cond))+
+  geom_point()+
+  ylim(0,70)+
+  labs(x = " ", y = " ", shape = " ")+
+  scale_shape_manual(values = c(0,15))+
+  scale_x_discrete(breaks = c(-6,-4,-2,0,2,4,6))+
+  theme_apa(legend.use.title = TRUE)+
+  theme(text = element_text(size = 12, family = "Times New Roman"))+
+  theme(legend.position= c(0.15,.7), legend.direction = "vertical")
+
+figure = ggarrange(a,b,c,d,e,f,g,h,i,
+                   ncol = 3, nrow = 3)
+
+annotate_figure(figure, 
+                bottom = text_grob("Proficiency Continuum", family = "Times New Roman", size = 14),
+                left = text_grob("Test Information", rot = 90, family = "Times New Roman", size = 14))
+
+ggsave(filename = paste0("C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Graphs/",
+                         "Test Information Random.tiff"), device = "tiff",
+       width = 35, height = 20, units = "cm", dpi = 600, compression = "lzw+p")
+```
+Improvements 
+
+```{r}
+melt_results_og = melt_results[-c(2381:2420),] %>%
+  filter(cond == "OG")
+melt_results_add = melt_results[-c(2381:2420),] %>%
+  filter(cond != "OG")
+
+melt_results_comp = left_join(melt_results_add, melt_results_og, by = c("design", "Theta")) 
+melt_results_comp = melt_results_comp %>%
+  mutate(comp = Test_Info.x - Test_Info.y)
+  
+a = melt_results_comp[melt_results_comp$comp >= 1,]
+head(a)
+tail(a, 80)
+```
+

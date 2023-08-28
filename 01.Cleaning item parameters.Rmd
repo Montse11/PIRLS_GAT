@@ -1,0 +1,127 @@
+---
+title: "Item bank"
+author: "Montserrat Valdivia"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+```
+
+#PIRLS data cleaning
+
+```{r}
+# Clean global environment
+rm(list= ls())
+# Set path 
+path = "D:/PIRLS/Item parameters/2016/" 
+setwd(path)
+# From PIRLS 2016 
+
+P16_ItemInformation <- read_excel("P16_ItemInformation.xlsx")
+colnames(P16_ItemInformation)[1] <- "Item"
+P16_IRTItemParameters <- read_excel("P16_IRTItemParameters.xlsx", 
+    sheet = "REA")
+# merge two datasets
+P16 = full_join(P16_ItemInformation, P16_IRTItemParameters, by = "Item" )
+# select only scaled items
+P16 = P16[which(P16$`Scaling\r\nStatus` == "Yes"),]
+
+# From PIRLS literacy 2016
+
+PL16_IRTItemParameters <- read_excel("PL16_IRTItemParameters.xlsx", skip = 1)
+PL16_IRTItemParameters = PL16_IRTItemParameters[which(PL16_IRTItemParameters$Notes != "Items Shared with PIRLS 2016 (Fixed Item Parameters)"),]
+
+PL16_ItemInformation <- read_excel("PL16_ItemInformation.xlsx")
+colnames(PL16_ItemInformation)[1] <- "Item"
+
+#merge
+PL16 = right_join(PL16_ItemInformation, PL16_IRTItemParameters, by = "Item" )
+
+#make sure all names are equal
+names(PL16) <- names(P16)
+
+#merge PIRLS and PIRLS Literacy
+PIRLS16 = rbind(P16, PL16)
+
+
+
+```
+
+
+```{r}
+#Create passage difficulty
+
+PIRLS16 = PIRLS16 %>%
+  mutate(passage_difficulty = case_when(`Passage Name` == "Shiny Straw" ~ "LitD1",
+                                        `Passage Name` == "Oliver and The Griffin" ~ "LitD2",
+                                        `Passage Name` == "Pemba Sherpa" ~ "LitM1",
+                                        `Passage Name` == "The Empty Pot" ~ "LitM3",
+                                        `Passage Name` == "The Summer My Father Was 10" ~ "LitE2",
+                                        `Passage Name` == "Library Mouse" ~ "LitE3",
+                                        `Passage Name` == "Where's the Honey?" ~ "InfD1",
+                                        `Passage Name` == "Icelandic Horses" ~ "InfD2",
+                                        `Passage Name` == "How Did We Learn to Fly?" ~ "InfM1",
+                                        `Passage Name` == "Sharks" ~ "InfM3",
+                                        `Passage Name` == "Training A Deaf Polar Bear" ~ "InfE2",
+                                        `Passage Name` == "Hungry Plant" ~ "InfE3"   ),
+         PassageID = case_when(`Passage Name` == "Shiny Straw" ~ 1,
+                                        `Passage Name` == "Oliver and The Griffin" ~ 2,
+                                        `Passage Name` == "Pemba Sherpa" ~ 3,
+                                        `Passage Name` == "The Empty Pot" ~ 4,
+                                        `Passage Name` == "The Summer My Father Was 10" ~ 5,
+                                        `Passage Name` == "Library Mouse" ~ 6,
+                                        `Passage Name` == "Where's the Honey?" ~ 7,
+                                        `Passage Name` == "Icelandic Horses" ~ 8,
+                                        `Passage Name` == "How Did We Learn to Fly?" ~ 9,
+                                        `Passage Name` == "Sharks" ~ 10,
+                                        `Passage Name` == "Training A Deaf Polar Bear" ~ 11,
+                                        `Passage Name` == "Hungry Plant" ~ 12 ),
+         Passagediff_adaptive = case_when(`Passage Name` == "Shiny Straw" ~ "H",
+                                        `Passage Name` == "Oliver and The Griffin" ~ "H",
+                                        `Passage Name` == "Pemba Sherpa" ~ "M",
+                                        `Passage Name` == "The Empty Pot" ~ "M",
+                                        `Passage Name` == "The Summer My Father Was 10" ~ "L",
+                                        `Passage Name` == "Library Mouse" ~ "L",
+                                        `Passage Name` == "Where's the Honey?" ~ "H",
+                                        `Passage Name` == "Icelandic Horses" ~ "H",
+                                        `Passage Name` == "How Did We Learn to Fly?" ~ "M",
+                                        `Passage Name` == "Sharks" ~ "M",
+                                        `Passage Name` == "Training A Deaf Polar Bear" ~ "L",
+                                        `Passage Name` == "Hungry Plant" ~ "L"))
+
+#Select passages in PISA 2021
+PIRLS16 = PIRLS16[!is.na(PIRLS16$passage_difficulty),]
+
+
+# order data
+## by passage and item location 
+PIRLS16 = PIRLS16 %>%
+  group_by(`Passage Name`) %>%
+  arrange(`Passage Name`,`Location (bj)`)
+
+# create item identifiers
+## og is for original items from 1 to 178 items
+PIRLS16$ItemID_og=  paste0("i.", 1:nrow(PIRLS16))
+## how many items are there in each passage
+PIRLS16 %>% 
+  group_by(`Passage Name`)%>%
+  tally()
+### use that information to create an item identifier for each 
+
+PIRLS16$ItemID_mod =  c(1:17, 1:16, 1:15, 1:18, 
+                  1:13, 1:17, 1:12, 1:14, 
+                  1:17, 1:14, 1:14, 1:13)
+
+```
+
+
+```{r}
+# Save data
+
+save(PIRLS16, file = "PIRLS2016.Rdata")
+
+```
+

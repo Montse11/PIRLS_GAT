@@ -1,0 +1,482 @@
+---
+title: "Paper 2 simulation and analysis"
+author: "Montserrat Valdivia"
+date: '2023-02-23'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library("lsasim")
+library("tidyverse")
+library("reshape2")
+library("parallel")
+library("doParallel")
+library("dplyr")
+library("multidplyr")
+library(fastDummies)
+library("readxl")
+library("R.utils")
+```
+
+```{r}
+# Clean global environment
+rm(list=ls())
+# Call in data
+
+# load item parameters
+load("PIRLS2016.Rdata")
+# Two items have NA item parameters
+PIRLS16 = PIRLS16[which(PIRLS16$Item != "L21B03M" & PIRLS16$Item != "L21B06M" ),]
+# load country proficiency
+gps <- read_excel("gps.xlsx")
+
+```
+
+
+#1. Specify Conditions
+
+```{r}
+passages_cond = list(
+  #Baseline
+  cc01 = c(H = 0 , E = 0),
+  # Adding two passages
+  cc02 = c(H = 0 , E = 2),
+  cc03 = c(H = 2 , E = 0),
+  cc04 = c(H = 2 , E = 2),
+  # Adding four passages
+  cc05 = c(H = 0 , E = 4),
+  cc06 = c(H = 4 , E = 0),
+  cc07 = c(H = 4 , E = 4),
+  # Adding six passages
+  cc08 = c(H = 0 , E = 6),
+  cc09 = c(H = 6 , E = 0),
+  cc10 = c(H = 6 , E = 6))
+
+design_cond = list(
+  dd01 = list(cntry = 1, design = "GAT"),
+  dd02 = list(cntry = 2, design = "GAT"),
+  dd03 = list(cntry = 3, design = "GAT"),
+  dd04 = list(cntry = 4, design = "GAT"),
+  dd05 = list(cntry = 5, design = "GAT"),
+  dd06 = list(cntry = 6, design = "GAT"),
+  dd07 = list(cntry = 7, design = "GAT"),
+  dd08 = list(cntry = 8, design = "GAT"),
+  dd09 = list(cntry = 9, design = "GAT"),
+  dd10 = list(cntry = 1, design = "Random"),
+  dd11 = list(cntry = 2, design = "Random"),
+  dd12 = list(cntry = 3, design = "Random"),
+  dd13 = list(cntry = 4, design = "Random"),
+  dd14 = list(cntry = 5, design = "Random"),
+  dd15 = list(cntry = 6, design = "Random"),
+  dd16 = list(cntry = 7, design = "Random"),
+  dd17 = list(cntry = 8, design = "Random"),
+  dd18 = list(cntry = 9, design = "Random"))
+
+```
+
+
+# 2. Call functions 
+
+```{r}
+source("02.Creating Booklets Functions.R")
+
+```
+
+# 3. Data simulation and analysis
+
+```{r}
+##Define sample size
+Ntheta = 4000
+path = "C:/Users/Montse/OneDrive - Indiana University/Dissertation/Data Analysis/Paper 2/Results/"
+#Define a function for booklet sample for each of the samples
+GAT_pop_gen = function(ii, cc){
+  
+  resp_gen = NULL
+  for(dd in 1:18){
+  #CONDITIONS 
+  cntry = design_cond[[dd]][["cntry"]]
+  design = design_cond[[dd]][["design"]]
+  
+  #For low performing
+  if (design == "GAT" & cntry %in% c(1,2,3)){
+    pp = .3 # probability of assignment to harder booklets
+  #For med performing
+  }else if (design == "GAT" & cntry %in% c(4,5,6)){
+    pp = .5 # probability of assignment to harder booklets
+  #For high performing
+  }else if (design == "GAT" & cntry %in% c(7,8,9)){
+    pp = .7 # probability of assignment to harder booklets
+  # For random assignment
+  }else if (design == "Random"){
+    pp = .5 # probability of assignment to harder booklets
+  }
+  
+  # Booklet and book assignment
+  Easier = booklet_creation_Easier_func(cc,ii)
+  Harder = booklet_creation_Hard_func(cc,ii)
+  
+
+  # Set seed
+  set.seed(ii*1992)
+  
+  # COGNITIVE DATA GENERATION FOR HARDER PASSAGES
+  
+  ##Assign form to subject
+  book_admin_H  <- lsasim::booklet_sample(n_subj = Ntheta*pp,
+                                       book_item_design = Harder$book_H)
+  book_admin_L  <- lsasim::booklet_sample(n_subj = Ntheta*(1-pp),
+                                       book_item_design = Easier$book_L)
+  
+  # generate ability
+  th_H <- rnorm(Ntheta*pp, mean= gps$theta[cntry], sd = gps$thetaSD[cntry])
+  th_L <- rnorm(Ntheta*(1-pp), mean= gps$theta[cntry], sd = gps$thetaSD[cntry])
+
+  
+  ## Response generation
+  cognitive_data_H <- lsasim::response_gen(subject = book_admin_H$subject,
+                                         item = book_admin_H$item,
+                                         theta = th_H,
+                                         a_par = Harder$item_pool_H$a,
+                                         b_par = Harder$item_pool_H$b)
+  cognitive_data_L <- lsasim::response_gen(subject = book_admin_L$subject,
+                                         item = book_admin_L$item,
+                                         theta = th_L,
+                                         a_par = Easier$item_pool_L$a,
+                                         b_par = Easier$item_pool_L$b)
+  
+  # change item numbers so we can merge different conditions
+  n_items_H = ncol(cognitive_data_H)       # number of items Harder 
+  item_names_H = c(Harder[["PIRLS16_H"]]$"ItemID_og") # save original item numbers 
+  names(cognitive_data_H)[-n_items_H] <- c(item_names_H)
+  
+  n_items_L = ncol(cognitive_data_L)       # number of items Easier
+  item_names_L = c(Easier[["PIRLS16_L"]]$"ItemID_og") # save original item numbers 
+  names(cognitive_data_L)[-n_items_L] <- c(item_names_L)
+  
+  # get the passage the subject took
+  ## group book_admin
+  book_by_subject_H = book_admin_H %>%
+  group_by(subject) %>% # it is like group_by(subject) from multidplyr
+  summarise(Book = mean(book), .groups = 'keep')
+  
+  book_by_subject_L = book_admin_L %>%
+  group_by(subject) %>% # it is like group_by(subject) from multidplyr
+  summarise(Book = mean(book), .groups = 'keep')
+  
+  
+  # book_by_subject = aggregate(book_admin$book, by = list(book_admin$subject), FUN = "mean" )
+  # names(book_by_subject) <- c("subject", "Book")
+  
+  ##  
+  passage_by_subject_H = left_join(Harder[["CB_cluster_matrix_H"]], book_by_subject_H, by = "Book")
+  passage_by_subject_L = left_join(Easier[["CB_cluster_matrix_L"]], book_by_subject_L, by = "Book")
+  ## 
+  cognitive_data_merge_H = left_join(cognitive_data_H, passage_by_subject_H, by = "subject")  
+  cognitive_data_merge_L = left_join(cognitive_data_L, passage_by_subject_L, by = "subject")  
+
+  
+  cognitive_data = bind_rows(cognitive_data_merge_H, cognitive_data_merge_L )
+  
+  # I need to fix this for other conditions
+  books = cognitive_data[, c("subject", "Book","B1", "B2")]
+  responses =cognitive_data[,grepl("i.", colnames(cognitive_data))]
+  
+  # Replace the generated response in the data
+  response_gen = data.frame(rep = ii,
+                            design = design, 
+                            country = cntry, 
+                            prob = c(rep(pp, Ntheta*pp), rep(1-pp, Ntheta*(1-pp))),
+                            cond = cc, 
+                            TH0 = c(th_H, th_L),
+                            books,
+                            responses)
+  
+
+    
+  resp_gen = bind_rows(resp_gen, response_gen)
+  } 
+  #==========================================================================================
+  #For GAT
+  response_gat = resp_gen %>% filter(design == "GAT")
+  saveObject(response_gat, file = paste0(path, "Responses/GAT_", cc,"cond_", ii,"rep_",".Rbin"))
+  #data_analysis(sim_response = response_gat, cc, ii)
+  #==========================================================================================
+  #For Random
+  #For GAT
+  response_rand = resp_gen %>% filter(design == "Random")
+  saveObject(response_rand, file = paste0(path, "Responses/Random_", cc,"cond_", ii,"rep_",".Rbin"))
+  #data_analysis(sim_response = response_rand, cc, ii)
+      
+  mylist = list(Easier = Easier, 
+                Harder = Harder,
+                response_gat = response_gat,
+                response_rand = response_rand)
+  return(mylist)
+}
+
+
+# GAT_pop_gen(cc = 2, ii = 1)
+# 
+# startTime <- Sys.time()
+#   
+# GAT_pop_gen(cc = 2, ii = 1)
+# endTime <- Sys.time()
+#   
+# # prints recorded time
+# print(endTime - startTime)
+```
+
+```{r}
+data_analysis = function(ii, cc, des){
+  
+  #call in data
+  resp = GAT_pop_gen(ii,cc)
+  Easier = resp[["Easier"]]
+  Harder = resp[["Harder"]]
+
+  #condition
+  if (des == "GAT"){
+    sim_response = resp[["response_gat"]]
+  }else if(des == "Random"){
+    sim_response = resp[["response_rand"]]
+  }
+  
+  
+  ##=======================================================================##
+  ## Item parameter estimation                                             ##
+  ##=======================================================================##
+  tam.mod <- TAM::tam.mml.2pl( sim_response[,grepl("i\\.", colnames(sim_response))],
+                             irtmodel = "2PL",
+                             group = sim_response$country,
+                             est.variance = FALSE, # this should be false
+                             control = list(maxiter = 10000), verbose = F)
+
+  
+  save(tam.mod, file = paste0(path, "TAM/tam_estimated_", des,"_cond", cc,"_r", ii, ".RData"))
+  
+  
+  # Storing the items
+  PIRLS16_merged = full_join(Harder[["PIRLS16_H"]][c(1,2,3,16,18,32,34)],
+                             Easier[["PIRLS16_L"]][c(1,2,3,16,18,32,34)]) %>% 
+    distinct(ItemID_og, .keep_all = TRUE)
+  
+  estimated = data.frame(tam.mod[["item_irt"]])
+  names(estimated)[1] <- "ItemID_og"
+  
+  All_items = full_join(PIRLS16_merged, estimated, by = "ItemID_og")
+  
+  ## mean - sigma
+  u <- mean(All_items$alpha)/mean(All_items$`Slope (aj)`)
+  v <- mean(All_items$`Location (bj)`) - u*mean(All_items$beta)
+
+  All_items$rs_est_a <- All_items$alpha/u          #rescaled item discrimination
+  All_items$rs_est_b <- u*All_items$beta + v      #rescaled item difficulty
+
+  # to fixed the item paremeters, they need to be in a specific format
+  # For subsequent use of item difficulty
+  xsi.fixed = cbind( 1:(length(All_items$rs_est_b)), All_items$rs_est_b)
+
+  # For subsequent use of slopes
+  slope = data.frame(ID = 1:length(All_items$rs_est_a),
+                     "1" = 0,
+                     "2" = All_items$rs_est_a)
+
+  slope1 = melt(slope, id.vars = c("ID"), measure.vars = c("X1", "X2"))
+  slope1 = slope1[order(slope1$ID, decreasing = FALSE),]
+  B.fixed = data.matrix(data.frame(ID = slope1$ID,
+                                   a =  ifelse(slope1$variable == "X1", 1, 2),
+                                   b = 1,
+                                   c = slope1$value),
+                        rownames.force = NA)
+  
+  # Item parameters for group 1 and group 2
+  Allitems = data.frame(rep = ii, 
+                        condition = cc,
+                        design = des,
+                        All_items ) 
+  Allitems = Allitems%>%
+    mutate(bias_a = round(rs_est_a - `Slope..aj.`, 4),
+            bias_b = round(rs_est_b - `Location..bj.`, 4))
+  saveObject(Allitems, file = paste0(path, "Items/items_", des,"_cond", cc,"_r", ii, ".Rbin"))
+  
+  #test information  
+  infc = TAM::IRT.informationCurves(tam.mod, theta = seq(-6,6,by=.1))
+  save(infc, file = paste0(path, "Item Info Object/info_", des,"_cond", cc,"_r", ii, ".RData"))
+  saveObject(infc[["test_info_curve"]], file = paste0(path, "Item Info/testInfo_", des,"_cond",
+                                                      cc,"_r", ii, ".Rbin"))
+  saveObject(infc[["info_curves_item"]], file = paste0(path, "Item Info/itemInfo_", des,"_cond",
+                                                      cc,"_r", ii, ".Rbin"))
+  saveObject(infc[["se_curve"]], file = paste0(path, "Item Info/se_", des,"_cond",
+                                                      cc,"_r", ii, ".Rbin"))
+  
+  
+  ##=======================================================================##
+  ## Proficiency estimation with fixed item parameters                     ##
+  ##=======================================================================##
+  
+  tam.mod.mg <- TAM::tam.mml.2pl( sim_response[,grepl("i\\.", colnames(sim_response))], 
+                                  irtmodel = "2PL",
+                                  est.variance = T, 
+                                  group = sim_response$country,
+                                  #three next lines of code based on mean sigma rescaling
+                                  xsi.inits = xsi.fixed, 
+                                  xsi.fixed = xsi.fixed,
+                                  B.fixed = B.fixed,
+                                  control = list(maxiter = 10000), verbose = F)
+  #Plausible values
+  pvmod <- TAM::tam.pv( tam.mod.mg, 
+                        nplausible = 5, #5 plausible values
+                        samp.regr = TRUE)
+  
+  data_res <- cbind(sim_response, pvmod$pv)
+  
+  
+  data_res1 <- data_res%>%
+    group_by(rep, design, country, cond) %>%
+    summarise(TH0 = mean(TH0),
+              PV1 = mean(PV1.Dim1),
+              PV2 = mean(PV2.Dim1),
+              PV3 = mean(PV3.Dim1),
+              PV4 = mean(PV4.Dim1),
+              PV5 = mean(PV5.Dim1)) %>%
+    mutate(bias1 = PV1 - TH0,
+           bias2 = PV2 - TH0,
+           bias3 = PV3 - TH0,
+           bias4 = PV4 - TH0,
+           bias5 = PV5 - TH0,
+           bias1sq = bias1^2,
+           bias2sq = bias2^2,
+           bias3sq = bias3^2,
+           bias4sq = bias4^2,
+           bias5sq = bias5^2 )
+    
+   data_res1$PV = rowMeans(data_res1[c(paste0("PV", 1:5))])
+   data_res1$UM = (1/5)*(rowSums(data_res1[c(paste0("PV", 1:5))]))
+   data_res1$BM = (1/4)*((data_res1$PV1-data_res1$PV)^2+(data_res1$PV2-data_res1$PV)^2+
+                        (data_res1$PV3-data_res1$PV)^2+(data_res1$PV4-data_res1$PV)^2+
+                        (data_res1$PV5-data_res1$PV)^2)
+   data_res1$VM = data_res1$UM + (6/5)*data_res1$BM                        
+   data_res1$bias = rowMeans(data_res1[c(paste0("bias", 1:5))])
+   data_res1$bias_sq = rowMeans(data_res1[c(paste0("bias", 1:5, "sq"))])
+   
+  
+   se = TAM::tam.se(tam.mod.mg, item_pars = FALSE)
+   data_res2 = cbind(data_res1, se[["beta"]])
+   
+   saveObject(data_res, file = paste0(path, "Full Data/PVs_", des,"_cond",
+                                                      cc,"_r", ii, ".Rbin"))
+   saveObject(data_res2, file = paste0(path, "Data/data_", des,"_cond",
+                                                      cc,"_r", ii, ".Rbin"))
+   save(se, file = paste0(path, "SE/se_", des,"_cond", cc,"_r", ii, ".RData"))
+   
+   
+}
+
+data_analysis(ii = 1, cc = 2, des = "GAT")
+
+```
+
+```{r}
+library("parallel")
+library("doParallel")
+```
+
+```{r}
+Nsim = 200
+# Set parallel 
+no_cores <- detectCores()        #number of cores that will be used
+cl <- makeCluster(no_cores-4)    #creates copies of R to run on cores (i.e., computational clusters)
+registerDoParallel(cl)           #register parallel backend 
+
+clusterExport(cl,list('PIRLS16', 'gps', 'passages_cond', 'design_cond',
+                      'GAT_pop_gen', 'data_analysis', 
+                      'booklet_creation_Easier_func', 'booklet_creation_Hard_func',
+                      'bind_rows', '%>%', 'filter', '%in%', 'dummy_cols', 
+                      'block_design', 'booklet_design',
+                      'Ntheta', 'path', 'booklet_sample', 'response_gen',
+                      'summarise', 'left_join', 'saveObject', 
+                      'grepl', 'full_join', 'distinct', 'melt', 'mutate',
+                      'recode',
+                      #'IRT.informationCurves', 'tam.pv', 'tam.se',
+                      'cbind', 'group_by',
+                      'rowMeans', 'rowSums', 'Nsim'), 
+              envir=environment())
+
+
+#parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 1, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 2, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 3, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 4, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 5, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 6, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 7, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 8, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 9, des = "GAT"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 10, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 1, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 2, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 3, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 4, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 5, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 6, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 7, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 8, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 9, des = "Random"))
+# parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 10, des = "Random"))
+
+# stop the core division
+stopCluster(cl)
+
+```
+
+```{r}
+Nsim = 200
+# Set parallel 
+no_cores <- detectCores()        #number of cores that will be used
+cl <- makeCluster(no_cores-4)    #creates copies of R to run on cores (i.e., computational clusters)
+registerDoParallel(cl)           #register parallel backend 
+
+clusterExport(cl,list('PIRLS16', 'gps', 'passages_cond', 'design_cond',
+                      'GAT_pop_gen', 'data_analysis', 
+                      'booklet_creation_Easier_func', 'booklet_creation_Hard_func',
+                      'bind_rows', '%>%', 'filter', '%in%', 'dummy_cols', 
+                      'block_design', 'booklet_design',
+                      'Ntheta', 'path', 'booklet_sample', 'response_gen',
+                      'summarise', 'left_join', 'saveObject', 
+                      'grepl', 'full_join', 'distinct', 'melt', 'mutate',
+                      'recode',
+                      #'IRT.informationCurves', 'tam.pv', 'tam.se',
+                      'cbind', 'group_by',
+                      'rowMeans', 'rowSums', 'Nsim'), 
+              envir=environment())
+
+
+#parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 1, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 2, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 3, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 4, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 5, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 6, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 7, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 8, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 9, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 10, des = "GAT"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 1, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 2, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 3, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 4, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 5, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 6, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 7, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 8, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 9, des = "Random"))
+parSapply(cl, 1:Nsim, function(ii) data_analysis(ii, cc = 10, des = "Random"))
+
+# stop the core division
+stopCluster(cl)
+
+```
